@@ -4,7 +4,7 @@
 
 ---
 
-## 📁 1. What to Push to the Final Repository
+## 📁 1. Project Repo
 
 To ensure a clean, professional submission that the judges can easily review, structure your repository exactly like this:
 
