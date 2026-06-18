@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-build_cbm_dataset.py — CausaFlow AI · Capacity-Blockage Minutes Pipeline
+build_cbm_dataset.py — CurbOps: Parking enforcement intelligence · Capacity-Blockage Minutes Pipeline
 =========================================================================
 Gridlock 2.0 Hackathon  ·  Data-Engineering (R1)
 
@@ -542,7 +542,7 @@ def compute_cbm(df: pd.DataFrame) -> pd.DataFrame:
 def print_summary(df: pd.DataFrame) -> None:
     """Print a human-readable summary of the output dataset."""
     print("\n" + "=" * 70)
-    print("  CausaFlow AI — CBM Pipeline Summary")
+    print("  CurbOps: Parking enforcement intelligence — CBM Pipeline Summary")
     print("=" * 70)
     print(f"  Total rows:               {len(df):>10,}")
     print(f"  CBM columns added:        duration_min, lane_blockage_factor, pce,")
@@ -596,7 +596,7 @@ def main() -> None:
     """Orchestrate the full CBM data pipeline."""
     t_start = time.time()
     log.info("=" * 60)
-    log.info("CausaFlow AI — CBM Pipeline starting")
+    log.info("CurbOps: Parking enforcement intelligence — CBM Pipeline starting")
     log.info("=" * 60)
 
     # Validate input file exists

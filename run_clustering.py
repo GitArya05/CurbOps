@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_clustering.py — CausaFlow AI · Spatial Clustering Pipeline
+run_clustering.py — CurbOps: Parking enforcement intelligence · Spatial Clustering Pipeline
 ===============================================================
 Gridlock 2.0 Hackathon  ·  Clustering (R2)
 
@@ -416,7 +416,7 @@ def print_summary(zones: list[dict], n_clusters: int,
     """Print a human-readable summary of the clustering results to stdout."""
     print()
     print("=" * 74)
-    print("  CausaFlow AI — Clustering Pipeline Summary")
+    print("  CurbOps: Parking enforcement intelligence — Clustering Pipeline Summary")
     print("=" * 74)
     print(f"  Number of clusters found:      {n_clusters:>8,}")
     print(f"  Violations assigned to zones:  {n_assigned:>8,}")
@@ -455,7 +455,7 @@ def main() -> None:
 
     print()
     print("=" * 74)
-    print("  CausaFlow AI — Spatial Clustering Pipeline")
+    print("  CurbOps: Parking enforcement intelligence — Spatial Clustering Pipeline")
     print("=" * 74)
     print()
 

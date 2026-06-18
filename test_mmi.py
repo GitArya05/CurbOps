@@ -2,7 +2,7 @@
 """
 test_mmi.py — MapmyIndia OAuth2 + Reverse Geocode Validation
 =============================================================
-CausaFlow AI  ·  Gridlock 2.0 Hackathon  ·  Data‑Engineering (R1)
+CurbOps: Parking enforcement intelligence  ·  Gridlock 2.0 Hackathon  ·  Data‑Engineering (R1)
 
 Purpose
 -------
@@ -118,7 +118,7 @@ def reverse_geocode(token: str, lat: float, lng: float) -> dict:
 def main() -> None:
     """Run the end‑to‑end test."""
     print("=" * 65)
-    print("  CausaFlow AI — MapmyIndia API Connectivity Test")
+    print("  CurbOps: Parking enforcement intelligence — MapmyIndia API Connectivity Test")
     print("=" * 65)
 
     try:
