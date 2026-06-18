@@ -31,14 +31,35 @@ INPUT_CSV = "dataset/jan to may police violation_anonymized791b166.csv"
 OUTPUT_CSV = "dataset/violations_with_cbm.csv"
 CACHE_FILE = "dataset/mmi_cache.json"
 
-CLIENT_ID = (
-    "96dHZVzsAuvKpFOIkUIT40J0n4gH6i6xy-HnmGr-XhR1zJ5QRnUu"
-    "-FNqWHvq1vYYRkS17-pzeSBlJ1J9bb5x96WpjDMHtYpa"
-)
-CLIENT_SECRET = (
-    "lrFxI-iSEg_UKwlZtW_vUHLVaAo2F7EZYBw7PJvrS8mfjJQ6XAmlwomTK"
-    "_OTOW08LE_leYk6k8mG60tSxAW5zNEKSK6EzmCe90t2PjNuJKU="
-)
+# ─────────────────────────────────────────────────────────────────────────────
+# CREDENTIALS — never hardcoded.
+# Loaded from a git-ignored `secrets.txt` (CLIENT_ID on line 1, CLIENT_SECRET on
+# line 2) or, as a fallback, the MAPPLS_CLIENT_ID / MAPPLS_CLIENT_SECRET
+# environment variables. This keeps secrets out of the repository.
+# ─────────────────────────────────────────────────────────────────────────────
+def _load_credentials() -> tuple[str, str]:
+    """Load Mappls API credentials from secrets.txt or environment variables."""
+    secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.txt")
+    if os.path.exists(secrets_path):
+        with open(secrets_path) as f:
+            lines = f.read().strip().splitlines()
+        if len(lines) >= 2 and lines[0].strip() and lines[1].strip():
+            return lines[0].strip(), lines[1].strip()
+        raise RuntimeError(
+            "secrets.txt must contain CLIENT_ID on line 1 and CLIENT_SECRET on line 2"
+        )
+    env_id = os.environ.get("MAPPLS_CLIENT_ID")
+    env_secret = os.environ.get("MAPPLS_CLIENT_SECRET")
+    if env_id and env_secret:
+        return env_id, env_secret
+    raise RuntimeError(
+        "Mappls credentials not found. Create a git-ignored secrets.txt "
+        "(CLIENT_ID on line 1, CLIENT_SECRET on line 2) or set the "
+        "MAPPLS_CLIENT_ID / MAPPLS_CLIENT_SECRET environment variables."
+    )
+
+
+CLIENT_ID, CLIENT_SECRET = _load_credentials()
 TOKEN_URL = "https://outpost.mapmyindia.com/api/security/oauth/token"
 REV_GEOCODE_URL = "https://apis.mapmyindia.com/advancedmaps/v1/{token}/rev_geocode"
 
@@ -251,8 +272,38 @@ def get_access_token() -> str:
     return token
 
 
+def resolve_junction_from_result(result: dict | None) -> tuple[str | None, float | None, float | None]:
+    """
+    Extract a human-readable junction name and resolved lat/lng from a
+    MapmyIndia reverse-geocode result.
+
+    Name preference: POI name → street → formatted_address.
+    Returns (name, lat, lng); any element may be None if unavailable.
+    """
+    if not result or not isinstance(result, dict):
+        return None, None, None
+
+    name = (
+        str(result.get("poi") or "").strip()
+        or str(result.get("street") or "").strip()
+        or str(result.get("formatted_address") or "").strip()
+    ) or None
+
+    lat = lng = None
+    try:
+        if result.get("lat") not in (None, ""):
+            lat = float(result.get("lat"))
+        if result.get("lng") not in (None, ""):
+            lng = float(result.get("lng"))
+    except (TypeError, ValueError):
+        lat = lng = None
+
+    return name, lat, lng
+
+
 def load_cache(path: str) -> dict:
     """Load the JSON geocode cache from disk."""
+
     if os.path.exists(path):
         with open(path, "r") as f:
             return json.load(f)
@@ -291,8 +342,8 @@ def reverse_geocode_cached(
     if key in cache:
         return cache[key]
 
-    # Circuit breaker: skip API call if open
-    if _circuit_open:
+    # Circuit breaker / no token: skip API call (rely on cache only)
+    if _circuit_open or not token:
         return None
 
     url = REV_GEOCODE_URL.format(token=token)
@@ -517,9 +568,39 @@ def add_junction_sensitivity(df: pd.DataFrame, token: str) -> pd.DataFrame:
             log.info("  ✓ Reverse geocode done — cache has %d entries (circuit_open=%s)",
                      len(cache), _circuit_open)
 
+    # ── Merge MapmyIndia results back into the DataFrame ────────────────
+    # For every "No Junction" row, look up the (cached) reverse-geocode result
+    # and (a) overwrite junction_name with the resolved POI / street /
+    # formatted_address, and (b) recompute the distance using the junction
+    # coordinates returned by MapmyIndia. This is what actually enriches the
+    # missing junctions and improves the spatial accuracy of junction_sensitivity.
+    enriched_names = 0
+    enriched_dist = 0
+    if len(no_jn_idx) > 0:
+        # Positional lookup so we can update the positional dist_with array
+        pos_of = {idx: pos for pos, idx in enumerate(df.index)}
+        for idx in no_jn_idx:
+            vlat = df.at[idx, "latitude"]
+            vlng = df.at[idx, "longitude"]
+            key = f"{round(vlat, 4)},{round(vlng, 4)}"
+            result = cache.get(key)
+            name, rlat, rlng = resolve_junction_from_result(result)
+            if name:
+                df.at[idx, "junction_name"] = name
+                enriched_names += 1
+            if rlat is not None and rlng is not None:
+                dist_with[pos_of[idx]] = haversine(vlat, vlng, rlat, rlng)
+                enriched_dist += 1
+        log.info(
+            "  MapmyIndia merge: %s junction names enriched, %s distances recomputed "
+            "from resolved junction coordinates",
+            f"{enriched_names:,}", f"{enriched_dist:,}",
+        )
+
     # ── Compute junction_sensitivity ─────────────────────────────────────
     df["junction_distance_m"] = dist_with
     df["junction_sensitivity"] = 1.0 + np.exp(-df["junction_distance_m"] / 100.0)
+
 
     log.info("  Junction sensitivity stats:\n%s",
              df["junction_sensitivity"].describe().to_string())
@@ -620,8 +701,17 @@ def main() -> None:
     df = add_pce(df)
 
     # Stage 5: Junction Sensitivity (includes MapmyIndia calls)
-    token = get_access_token()
+    # Token acquisition is best-effort: if it fails (e.g. rotated/expired
+    # credentials, no network), we proceed using the on-disk reverse-geocode
+    # cache only, so the pipeline still completes deterministically.
+    try:
+        token = get_access_token()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not obtain Mappls token (%s). "
+                    "Proceeding with cached geocodes only.", exc)
+        token = None
     df = add_junction_sensitivity(df, token)
+
 
     # Stage 6: CBM
     df = compute_cbm(df)

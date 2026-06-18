@@ -10,7 +10,8 @@ Haversine metric, computes per-zone aggregate metrics, and outputs two
 dashboard-ready files:
 
     1. dataset/zones.geojson      – GeoJSON FeatureCollection (Point centroids)
-    2. dataset/zone_summary.json  – JSON array sorted by zone_CBM_sum desc
+    2. dataset/zone_summary.json  – JSON array sorted by priority_score desc
+
 
 Usage:
     python run_clustering.py
@@ -233,8 +234,11 @@ def compute_zone_metrics(df: pd.DataFrame) -> list[dict]:
     """
     Stage 4: Compute per-zone aggregate metrics for every valid cluster.
 
-    Returns a list of zone dictionaries sorted by zone_CBM_sum descending.
-    Every field in the returned dicts appears in BOTH output files.
+    Returns a list of zone dictionaries sorted by priority_score descending.
+    Each zone also carries an action_tier (TOW / PATROL / MONITOR) derived
+    from priority_score percentiles. Every field in the returned dicts appears
+    in BOTH output files.
+
     """
     print("[4/6] Computing per-zone metrics ...")
 
@@ -329,10 +333,23 @@ def compute_zone_metrics(df: pd.DataFrame) -> list[dict]:
         radius_m = float(dists_from_centroid.max())
 
         # ── Priority score ──────────────────────────────────────────────
-        # priority_score = zone_CBM_sum × peak_hour_ratio × log(1 + recurrence_days)
+        # IMPORTANT — ARTIFACT-AWARE DAMPENING:
+        # The raw timestamps contain a known "night-batching" artifact (a large
+        # spike of violations stamped 00:00–06:00, almost certainly from
+        # overnight batch-processing of camera tickets). This makes
+        # peak_hour_ratio only *approximate*. The original formula multiplied
+        # directly by peak_hour_ratio, which could zero out a zone's entire
+        # priority whenever the (unreliable) ratio was 0.
+        #
+        # To de-risk this dependency we blend the peak factor into the range
+        # 0.5–1.0 instead of 0.0–1.0. A zone with no detected peak-hour activity
+        # is therefore down-weighted (×0.5) but never zeroed out, and CBM +
+        # recurrence still drive the ranking. The dampening is intentional.
+        safe_peak_factor = 0.5 + 0.5 * peak_hour_ratio  # ranges 0.5–1.0, never 0
         priority_score = round(
-            zone_cbm_sum * peak_hour_ratio * math.log(1 + recurrence_days), 4
+            zone_cbm_sum * safe_peak_factor * math.log(1 + recurrence_days), 4
         )
+
 
         # ── Low-confidence flag ─────────────────────────────────────────
         low_confidence = violation_count < LOW_CONFIDENCE_THRESHOLD
@@ -355,11 +372,32 @@ def compute_zone_metrics(df: pd.DataFrame) -> list[dict]:
             "low_confidence":       low_confidence,
         })
 
-    # Sort by zone_CBM_sum descending (dashboard shows highest-impact first)
-    zones.sort(key=lambda z: z["zone_CBM_sum"], reverse=True)
+    # ── Action tiers (TOW / PATROL / MONITOR) ────────────────────────────
+    # Data-driven enforcement tiers based on priority_score percentiles across
+    # ALL zones (not arbitrary thresholds):
+    #   • TOW     → priority_score in the top 10%  (>= 90th percentile)
+    #   • PATROL  → next 20%                        (>= 70th percentile)
+    #   • MONITOR → bottom 70%
+    if zones:
+        priority_scores = [z["priority_score"] for z in zones]
+        p90 = np.percentile(priority_scores, 90)
+        p70 = np.percentile(priority_scores, 70)
+        for z in zones:
+            if z["priority_score"] >= p90:
+                z["action_tier"] = "TOW"
+            elif z["priority_score"] >= p70:
+                z["action_tier"] = "PATROL"
+            else:
+                z["action_tier"] = "MONITOR"
+
+    # Sort by priority_score descending — priority_score is our blended ranking
+    # metric (CBM × dampened peak factor × log recurrence). zone_CBM_sum remains
+    # available as a displayed metric, but ranking is consistent with the pitch.
+    zones.sort(key=lambda z: z["priority_score"], reverse=True)
 
     print(f"  [OK] Computed metrics for {len(zones):,} zones")
     return zones
+
 
 
 def write_geojson(zones: list[dict], filepath: str) -> None:
@@ -399,8 +437,9 @@ def write_zone_summary(zones: list[dict], filepath: str) -> None:
     """
     Stage 6: Write the zone summary as a JSON array.
 
-    Sorted by zone_CBM_sum descending.  Each element contains every
-    metric from the zone dict including zone_id.
+    Sorted by priority_score descending.  Each element contains every
+    metric from the zone dict including zone_id and action_tier.
+
     """
     print(f"[6/6] Writing zone summary: {filepath}")
 
@@ -424,17 +463,18 @@ def print_summary(zones: list[dict], n_clusters: int,
     print()
 
     # ── Top 5 zones ──────────────────────────────────────────────────────
-    print("  -- Top 5 Zones by zone_CBM_sum --------------------------------------")
+    print("  -- Top 5 Zones by priority_score ------------------------------------")
     print(f"  {'Zone':>6}  {'Dominant Junction':<35}  {'Station':<20}  "
-          f"{'Window':<14}  {'CBM Sum':>12}")
-    print(f"  {'-' * 6}  {'-' * 35}  {'-' * 20}  {'-' * 14}  {'-' * 12}")
+          f"{'Tier':<8}  {'Priority':>12}")
+    print(f"  {'-' * 6}  {'-' * 35}  {'-' * 20}  {'-' * 8}  {'-' * 12}")
     for z in zones[:5]:
         print(f"  {z['zone_id']:>6}  "
               f"{z['dominant_junction']:<35.35}  "
               f"{z['police_station']:<20.20}  "
-              f"{z['recommended_window']:<14}  "
-              f"{z['zone_CBM_sum']:>12,.2f}")
+              f"{z.get('action_tier', ''):<8}  "
+              f"{z['priority_score']:>12,.2f}")
     print()
+
 
     # ── Output file paths ────────────────────────────────────────────────
     print("  Output files:")

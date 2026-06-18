@@ -14,6 +14,11 @@ dataset/jan*
 *.csv
 mmi_cache.json
 
+# Secrets / credentials (NEVER commit)
+secrets.txt
+**/secrets.txt
+
+
 # IDEs
 .vscode/
 .idea/
