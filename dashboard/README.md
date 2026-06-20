@@ -43,14 +43,33 @@ You need [Node.js](https://nodejs.org/) (v18+) and your preferred package manage
 
 ---
 
-## 📂 Architecture & Data Flow
+## 📂 Directory Structure
 
-Because of hackathon constraints (no live DB required), we engineered the dashboard to be blazingly fast using static data endpoints.
+Here is the exact structure of the Next.js dashboard application:
 
-*   **`src/app/api/zones/route.ts`**: Serves the `zone_summary.json` (The priority table data).
-*   **`src/app/api/zones/geojson/route.ts`**: Serves the `zones.geojson` (The map data).
+```text
+dashboard/
+├── public/                 # Static assets
+│   ├── dataset/            # Pre-calculated GeoJSON and JSON summaries
+│   ├── logo.svg            
+│   └── favicon.svg         
+├── data/                   # Server-side data backups
+├── src/
+│   ├── app/                # Next.js App Router
+│   │   ├── api/            # Internal API routes serving static JSON (e.g., /api/zones)
+│   │   ├── globals.css     # Global Tailwind styles
+│   │   ├── layout.tsx      # Root layout
+│   │   └── page.tsx        # Main dashboard view
+│   ├── components/         
+│   │   ├── dashboard/      # Custom UI components (MapView, Sidebar, PriorityTable)
+│   │   └── ui/             # Reusable shadcn/ui components (buttons, cards, etc.)
+│   ├── hooks/              # Custom React hooks (use-toast, use-mobile)
+│   └── lib/                # Utility functions, type definitions, and logic
+├── next.config.ts          # Next.js compiler configuration
+├── tailwind.config.ts      # Tailwind CSS styling tokens
+└── package.json            # Node dependencies and npm scripts
+```
 
-The UI components (like `PriorityTable.tsx` and `MapView.tsx`) fetch from these internal Next.js API routes.
 
 ## 🎨 UI Features
 
