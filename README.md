@@ -51,14 +51,11 @@ CurbOps/
 ## 💻 Tech Stack Overview
 
 The dashboard UI is built with speed, aesthetics, and type-safety in mind, perfectly aligning with the hackathon constraints.
-
-*   **React + Vite + TypeScript:** Fast development, type safety catches bugs early, and Vite provides instant hot-reload.
-*   **Tailwind CSS:** Build clean, professional UI very quickly — critical for the "eye-catching" requirement.
-*   **React Router:** Two views (Map + Priority Table) without a page reload.
+*   **Next.js (React):** Replaced the old Vite/FastAPI setup with a unified Next.js architecture for maximum performance and a flawless developer experience.
+*   **Tailwind CSS + shadcn/ui:** Build clean, professional UI very quickly — critical for the "eye-catching" requirement.
 *   **Recharts:** Lightweight, React-native charts — exactly what you need for pie/bar charts in the drill-down.
-*   **react-leaflet:** The best React wrapper for Leaflet; supports MapmyIndia tiles via a custom tile layer.
-*   **FastAPI:** Minimal, fast, auto-generated docs — perfect to serve the two static JSON files with CORS.
-*   **Static JSON:** Zero backend processing; the dashboard simply fetches the pre-computed data. This aligns perfectly with the hackathon’s “no live API” constraint.
+*   **react-leaflet:** The best React wrapper for Leaflet for seamless, interactive map visualizations.
+*   **Static JSON / Next.js API Routes:** Zero heavy backend processing; the dashboard simply fetches the pre-computed data from internal Next.js API routes. This aligns perfectly with the hackathon’s “no live DB” constraint.
 
 ---
 
