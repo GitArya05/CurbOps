@@ -1,58 +1,125 @@
-# 🚀 CurbOps: Parking Enforcement Intelligence
+# 🚀 CurbOps: Parking Enforcement Intelligence – Backend Pipeline
 
-> **Gridlock 2.0 Hackathon** | Backend & Spatial Clustering Pipeline
+> **Gridlock 2.0 Hackathon** | Data Engineering & Spatial Clustering Engine
 
-Welcome to the **CurbOps** backend pipeline! This repository contains the data engineering and spatial clustering engine that powers our parking enforcement intelligence platform. 
-
-Our pipeline takes raw, scattered parking violations and transforms them into highly actionable, patrol-ready enforcement zones using our core metric: **Capacity-Blockage Minutes (CBM)**.
+The **CurbOps** backend pipeline transforms raw traffic‑violation records into
+**Capacity‑Blockage Minutes (CBM)** and groups them into actionable
+enforcement zones. The dashboard consumes its two static outputs:
+`zones.geojson` and `zone_summary.json`.
 
 ---
 
 ## 📂 Repository Structure
 
-This is a clean, production-ready backend repository.
-
 ```text
 CurbOps_Pipeline/
-├── README.md                      # You are here!
-├── requirements.txt               # Pipeline dependencies
-│
-├── build_cbm_dataset.py           # Stage 1: The Data Engineering Pipeline
-├── run_clustering.py              # Stage 2: The Spatial Clustering Engine
-│
-└── dataset/                       # Output artifacts (Ready for Dashboard)
-    ├── zones.geojson              # Geospatial map data
-    └── zone_summary.json          # Pre-sorted table data
+├── README.md
+├── requirements.txt
+├── build_cbm_dataset.py       # Stage 1 – CBM computation & data enrichment
+├── run_clustering.py          # Stage 2 – HDBSCAN clustering & zone metrics
+└── dataset/                   # Generated outputs (ready for the dashboard)
+    ├── zones.geojson
+    └── zone_summary.json
+```
+
+*Note: The raw input CSV and intermediate `violations_with_cbm.csv` are not
+committed due to size; they are generated locally.*
+
+---
+
+## ⚙️ Prerequisites
+
+- **Python 3.10+**
+- A **MapmyIndia OAuth2 key pair** (Client ID & Secret) stored in a file
+  named `secrets.txt` in the project root (line 1 = Client ID, line 2 = Secret).
+- The raw dataset `jan to may police violation_anonymized791b166.csv` placed
+  in a `data/` folder (the path can be changed inside the script).
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
 ---
 
-## ⚙️ How It Works
+## 🧪 How to Run
 
-Our architecture is completely decoupled into two independent stages:
+### Step 1 – Compute CBM
+```bash
+python build_cbm_dataset.py
+```
+Loads and cleans ~298k rows → 115,400 approved parking violations.
+Parses violation‑type JSON, assigns realistic durations, maps vehicle types
+to PCE, and enriches missing junction names via MapmyIndia
+reverse‑geocoding (results cached in `dataset/mmi_cache.json`).
+Outputs `dataset/violations_with_cbm.csv` (≈49 MB).
 
-### Stage 1: Data Engineering (`build_cbm_dataset.py`)
-This script ingests the raw BTP (Bengaluru Traffic Police) data and calculates the **Capacity-Blockage Minutes (CBM)** for every single ticket.
-*   **What is CBM?** CBM measures the actual physical impact a vehicle has on traffic flow, derived from: `Duration × Lane Blockage Factor × Passenger Car Equivalent (PCE) × Junction Sensitivity`.
-*   *Output:* A clean, enriched CSV where every violation has a quantified traffic impact score.
+### Step 2 – Cluster into Enforcement Zones
+```bash
+python run_clustering.py
+```
+Clusters violations with HDBSCAN (Haversine metric, `min_cluster_size=10`).
+Reassigns noise points within 200 m, computes per‑zone metrics (CBM sum,
+vehicle/violation type breakdown, recommended patrol window, action tier).
 
-### Stage 2: Spatial Clustering (`run_clustering.py`)
-This script takes 115,000+ scattered violations and mathematically groups them into actionable areas using **HDBSCAN**.
-*   **Why HDBSCAN?** It finds natural, density-based hotspots across the city without forcing us to guess how many zones exist. We use the **Haversine metric** to calculate true distance over the curve of the Earth.
-*   **Smart Time Windows:** We designed a custom algorithm to filter out overnight batch-processing artifacts, ensuring that the dashboard recommends realistic, daytime patrol windows (e.g., 07:00-08:00 AM rush hour).
-*   *Output:* 2,021 distinct enforcement zones, output as a GeoJSON and JSON array, perfectly pre-sorted by total CBM.
-
----
-
-## 💻 For the Dashboard UI Team
-
-The files in the `dataset/` folder are 100% ready for your Streamlit application:
-
-1. **Map Visualization:** Use **PyDeck** (`st.pydeck_chart`) to render `dataset/zones.geojson`. You can bind the circle radius to the `radius_m` property.
-2. **Priority Tables:** Load `dataset/zone_summary.json`. It is **already sorted** from worst hotspot to best. Just slice the top 5 or 10 elements for your priority UI cards!
-3. **Data Quality Filter:** Use the `low_confidence` boolean to let users toggle off zones that have fewer than 5 violations.
-4. **Patrol Recommendations:** Highlight the `recommended_window` property—this tells the police exactly what hour they need to be at that zone.
+Generates the two final artifacts:
+*   `dataset/zones.geojson` – GeoJSON FeatureCollection (2,021 zones)
+*   `dataset/zone_summary.json` – sorted array of zone objects
 
 ---
 
-*Built with ❤️ by the CurbOps Team for Gridlock 2.0*
+## 📊 Core Metrics Explained
+
+### CBM (Capacity‑Blockage Minutes)
+```text
+CBM = Duration × Lane‑Blockage Factor × PCE × Junction Sensitivity
+```
+*   **Duration** – domain‑based defaults (15‑60 min) because `closed_datetime` was 100 % null.
+*   **Lane‑Blockage Factor** – extracted from the `violation_type` JSON array (double‑parking = 1.0, bus‑stop = 0.8, footpath = 0.2, etc.).
+*   **PCE (Passenger Car Equivalent)** – Indian IRC‑inspired weights (Truck = 3.0, Car = 1.0, Two‑wheeler = 0.3).
+*   **Junction Sensitivity** – `1 + exp(-distance_m / 100)`; missing junction names are resolved via MapmyIndia.
+
+### Priority Score
+```text
+priority_score = zone_CBM_sum × safe_peak_factor × log(1 + recurrence_days)
+where safe_peak_factor = 0.5 + 0.5 × peak_hour_ratio
+```
+The dampened peak factor accounts for a known night‑batching artifact
+(>70k violations timestamped between midnight‑6 AM). Zones are sorted by
+`priority_score` and assigned action tiers via percentiles.
+
+---
+
+## 🎛️ Tunable Parameters
+
+All key constants are declared at the top of `run_clustering.py`:
+
+| Constant | Default | Description |
+| :--- | :--- | :--- |
+| `MIN_CLUSTER_SIZE` | `10` | Minimum violations to form a zone |
+| `CLUSTER_SELECTION_EPSILON` | `0.0` | No forced merging of clusters |
+| `NOISE_REASSIGN_THRESHOLD_M` | `200` | Max distance to adopt a noise point |
+| `LOW_CONFIDENCE_THRESHOLD` | `5` | Flag zones with fewer than 5 violations |
+
+*Action tier cut‑offs (90ᵗʰ / 70ᵗʰ percentiles of priority_score) are also configurable inside the script.*
+
+---
+
+## 📤 Output Files
+
+| File | Content |
+| :--- | :--- |
+| `dataset/zones.geojson` | Point features with centroid, `radius_m`, and properties (CBM, tier, vehicle/violation breakdowns, recommended window, etc.). |
+| `dataset/zone_summary.json` | The same zones as a JSON array, sorted by `priority_score` descending. Used directly by the dashboard’s priority table. |
+
+---
+
+## 🔍 Data Limitations & Transparency
+
+We are upfront about the dataset’s shortcomings so that the tool stays defensible in Q&A:
+
+*   **No real clearance timestamps** – `closed_datetime` is 100 % null. Durations are conservative, violation‑type‑based defaults.
+*   **Night‑batching artifact** – Timestamps cluster unnaturally between 00:00‑06:00 due to batch processing. Our peak‑hour factor is dampened and the recommended enforcement window is restricted to true morning/evening peak hours.
+*   **Enforcement bias** – The data reflects where police patrol, not all illegal parking. We mitigate this by blending CBM, recurrence, and junction sensitivity rather than relying on raw ticket counts.
+
+Built with ❤️ by the CurbOps Team for Gridlock 2.0

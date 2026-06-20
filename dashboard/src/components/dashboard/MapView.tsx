@@ -15,9 +15,11 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
-import { MapContainer, TileLayer, Circle, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Tooltip, useMap, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 import type { LatLngExpression } from 'leaflet';
 import { getJunctionDisplayName } from '@/lib/dashboard/tiers';
+import MapSearch, { type PlaceResult } from './MapSearch';
 import {
   TIER_COLORS,
   TIER_FILL_OPACITY,
@@ -86,6 +88,37 @@ function FlyToController({
   }, [flyToZone, map]);
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Search-result fly-to controller. When a place is picked from the search
+// dropdown, we fly to a street-level zoom and drop a temporary pin.
+// ---------------------------------------------------------------------------
+function PlaceFlyToController({ place }: { place: PlaceResult | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!place) return;
+    map.flyTo([place.lat, place.lon] as LatLngExpression, 16, {
+      duration: 0.9,
+      easeLinearity: 0.25,
+    });
+  }, [place, map]);
+  return null;
+}
+
+// Build a teardrop pin DivIcon so the search marker matches the dashboard's
+// cyan-on-dark aesthetic instead of Leaflet's default blue balloon.
+const PLACE_PIN_ICON = L.divIcon({
+  className: 'causaflow-place-pin',
+  html: `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+    <path d="M15 1.5 C8.6 1.5 3.5 6.4 3.5 12.5 C3.5 19.5 15 28.5 15 28.5 C15 28.5 26.5 19.5 26.5 12.5 C26.5 6.4 21.4 1.5 15 1.5 Z"
+      fill="#22d3ee" fill-opacity="0.25" stroke="#22d3ee" stroke-width="1.6"/>
+    <circle cx="15" cy="12.5" r="4" fill="#22d3ee"/>
+  </svg>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 28],
+  popupAnchor: [0, -26],
+});
+
 
 // ---------------------------------------------------------------------------
 // Custom recenter + reset controls
@@ -204,6 +237,9 @@ export default function MapView({
   // (Fastly CDN, no API key), matches the dashboard's dark aesthetic, and
   // keeps the brightly coloured enforcement zones as the visual focus.
   const [basemap, setBasemap] = useState<BasemapKey>('dark');
+  // Currently-selected place from the map search box. Holds the pin + drives
+  // the fly-to. Cleared via the marker's popup close button.
+  const [placeResult, setPlaceResult] = useState<PlaceResult | null>(null);
 
   return (
     <div className="absolute inset-0">
@@ -244,6 +280,31 @@ export default function MapView({
         )}
 
         <FlyToController flyToZone={flyToZone} />
+        <PlaceFlyToController place={placeResult} />
+
+        {/* Temporary pin for the place picked from the search box. */}
+        {placeResult && (
+          <Marker
+            position={[placeResult.lat, placeResult.lon] as LatLngExpression}
+            icon={PLACE_PIN_ICON}
+          >
+            <Popup className="causaflow-place-popup">
+              <div className="space-y-0.5">
+                <div className="font-semibold text-[12px] text-white">
+                  {placeResult.label}
+                </div>
+                {placeResult.detail && (
+                  <div className="text-[10px] text-slate-300 font-mono">
+                    {placeResult.detail}
+                  </div>
+                )}
+                <div className="text-[9px] text-[#22d3ee] font-mono uppercase tracking-wider">
+                  {placeResult.lat.toFixed(4)}°, {placeResult.lon.toFixed(4)}°
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {zones.map((z) => {
           const tier: ActionTier = z.action_tier || 'MONITOR';
@@ -336,6 +397,12 @@ export default function MapView({
           }}
         />
       </MapContainer>
+
+      {/* Place search with autocomplete (top-left). Lives above the map so it
+          doesn't fight Leaflet's own controls (top-right). */}
+      <div className="map-search-slot">
+        <MapSearch onSelect={setPlaceResult} />
+      </div>
 
       <BasemapSwitcher current={basemap} onChange={setBasemap} />
 
