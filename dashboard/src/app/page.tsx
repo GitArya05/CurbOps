@@ -2,24 +2,25 @@
 
 // ---------------------------------------------------------------------------
 // CurbOps — BTP Command Centre
-// Main dashboard page. Orchestrates state, data fetching, view switching,
-// and the "Recovery Simulation" toggle.
+// Main dashboard page.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+
 import Sidebar from '@/components/dashboard/Sidebar';
 import TopBar from '@/components/dashboard/TopBar';
 import DrillDownPanel from '@/components/dashboard/DrillDownPanel';
 import PriorityTable from '@/components/dashboard/PriorityTable';
-<<<<<<< HEAD
-import { DEPLOYABLE_TIERS, getZoneConfidence } from '@/lib/dashboard/tiers';
-import type { CityStats, Zone } from '@/lib/dashboard/types';
-=======
 import CityTrendsPanel from '@/components/dashboard/CityTrendsPanel';
-import { DEPLOYABLE_TIERS } from '@/lib/dashboard/tiers';
-import type { AnalyticsPayload, CityStats, Zone } from '@/lib/dashboard/types';
->>>>>>> f927d486c0d24991d740793746194b3608fbf241
+
+import { DEPLOYABLE_TIERS, getZoneConfidence } from '@/lib/dashboard/tiers';
+
+import type {
+  AnalyticsPayload,
+  CityStats,
+  Zone,
+} from '@/lib/dashboard/types';
 
 // Leaflet must only render on the client.
 const MapView = dynamic(() => import('@/components/dashboard/MapView'), {
@@ -144,7 +145,7 @@ export default function Home() {
       <div className="h-screen w-screen flex items-center justify-center bg-[#f8fafc]">
         <div className="text-center">
           <div className="inline-block w-12 h-12 border-2 border-[#3b82f6] border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-slate-500 font-mono text-sm">Initialising CurbOps command deck…</p>
+          <p className="text-slate-500 font-mono text-sm">Loading CurbOps...</p>
         </div>
       </div>
     );

@@ -185,7 +185,7 @@ export default function Sidebar({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             LIVE FEED
           </span>
-          <span>v2.0 · GRIDLOCK 2.0</span>
+          <span>LIVE OPERATIONS</span>
         </div>
 
         {/* City-wide stats */}
@@ -194,7 +194,7 @@ export default function Sidebar({
             City-Wide Telemetry
           </div>
           <StatBlock
-            label={simulate ? 'Congestion Minutes Recovered' : 'Total CBM (min)'}
+            label={simulate ? 'Congestion Minutes Recovered' : 'CONGESTION BURDEN (CBM)'}
             value={fmtCBM(cbmShown)}
             sub={simulate ? 'TOW+PATROL · 60% capacity gain' : 'Congestion Burden Minutes'}
             accent={simulate ? '#34d399' : '#22d3ee'}
@@ -223,13 +223,13 @@ export default function Sidebar({
             Controls
           </div>
           <ToggleRow
-            label="Hide low-confidence zones"
+            label="Show only confidence ≥70%"
             hint="Filter out low-signal predictions"
             on={hideLowConfidence}
             onClick={() => setHideLowConfidence((v) => !v)}
           />
           <ToggleRow
-            label="Simulate Optimized Enforcement"
+            label="Recovery Simulation"
             hint="TOW + PATROL deployment · 60% recovery"
             on={simulate}
             onClick={() => setSimulate((v) => !v)}

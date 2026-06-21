@@ -27,7 +27,7 @@ export const ACTION_TIER_SHORT: Record<ActionTier, string> = {
 };
 
 // Deployable = zones that get active enforcement (TOW + PATROL).
-// MONITOR zones are excluded from the "Simulate Optimized Enforcement" view.
+// MONITOR zones are excluded from the "Recovery Simulation" view.
 export const DEPLOYABLE_TIERS: ActionTier[] = ['TOW', 'PATROL'];
 
 export function getZoneConfidence(zone: Pick<Zone, 'peak_hour_ratio' | 'recurrence_days'>): number {

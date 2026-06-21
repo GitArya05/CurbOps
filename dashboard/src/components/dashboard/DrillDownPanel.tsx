@@ -19,9 +19,10 @@ import {
 } from 'recharts';
 import {
   cleanViolationLabel,
-  explainZone,
   getJunctionDisplayName,
   parseWindow,
+  getConfidenceColor,
+  getZoneConfidence,
 } from '@/lib/dashboard/tiers';
 import { TIER_COLOR_FLAT } from '@/lib/tierColors';
 import type { Zone } from '@/lib/dashboard/types';
@@ -125,6 +126,24 @@ export default function DrillDownPanel({
     ? `${String(win.start).padStart(2, '0')}:00 – ${String(win.end).padStart(2, '0')}:00`
     : zone.recommended_window || 'N/A';
 
+  const confidencePct = getZoneConfidence(zone);
+
+  // Operational deployment brief bullets (max 4, no AI paragraphs)
+  const deploymentBriefBullets = [
+    `Recurring congestion detected (${zone.recurrence_days} active days)`,
+    `Peak activity between ${win ? `${String(win.start).padStart(2, '0')}:00 and ${String(win.end).padStart(2, '0')}:00` : zone.recommended_window || 'peak hours'}`,
+    `Dispatch one ${tier.toLowerCase()} unit from ${zone.police_station} PS`,
+    `Expected recovery: ${Math.round(zone.zone_CBM_sum * 0.4).toLocaleString('en-IN')} CBM`,
+  ];
+
+  // Why Prioritized simple operational bullets
+  const whyPrioritizedBullets = [
+    'High congestion burden',
+    win && win.start < 12 ? 'Morning recurrence' : 'Evening recurrence',
+    'Junction proximity',
+    'Repeated enforcement history',
+  ];
+
   return (
     <div
       key={zone.zone_id}
@@ -133,6 +152,7 @@ export default function DrillDownPanel({
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-slate-200/60 flex items-start justify-between">
         <div className="min-w-0 flex-1">
+          {/* Action tier + zone id */}
           <div className="flex items-center gap-2 mb-1">
             <span
               className="tier-chip text-white"
@@ -143,11 +163,32 @@ export default function DrillDownPanel({
             </span>
             <span className="text-[10px] font-mono text-slate-500">ZONE #{zone.zone_id}</span>
           </div>
+          {/* Zone title */}
           <h2 className="text-[17px] font-semibold text-slate-900 leading-tight tracking-tight truncate" title={junctionName}>
             {junctionName}
           </h2>
-          <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
-            <span className="text-slate-700 font-semibold">{zone.police_station}</span> PS · Priority {Math.round(zone.priority_score).toLocaleString('en-IN')}
+          {/* Confidence + Priority row */}
+          <div className="flex items-center gap-3 mt-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-[0.12em] text-slate-400 font-semibold">Confidence</span>
+              <span
+                className="text-[11px] font-mono font-semibold"
+                style={{ color: getConfidenceColor(confidencePct) }}
+              >
+                {confidencePct}%
+              </span>
+            </div>
+            <span className="text-slate-200">·</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase tracking-[0.12em] text-slate-400 font-semibold">Priority</span>
+              <span className="text-[11px] font-mono font-semibold text-slate-700">
+                {Math.round(zone.priority_score).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <span className="text-slate-200">·</span>
+            <span className="text-[10px] font-mono text-slate-500">
+              <span className="text-slate-700 font-semibold">{zone.police_station}</span> PS
+            </span>
           </div>
         </div>
         <button
@@ -179,11 +220,30 @@ export default function DrillDownPanel({
         </div>
       )}
 
-
       {/* Body */}
       <div className="flex-1 overflow-y-auto scroll-thin px-4 py-3 space-y-4">
+        {/* Metric Cards Grid */}
         <div className="grid grid-cols-2 gap-2">
-          <MetricCard label="Total CBM" value={Math.round(zone.zone_CBM_sum).toLocaleString('en-IN')} sub="congestion minutes" accent={tierColor} />
+          {/* CBM card with tooltip explaining the metric */}
+          <div className="relative group">
+            <MetricCard
+              label="Congestion Burden"
+              value={`${Math.round(zone.zone_CBM_sum).toLocaleString('en-IN')} CBM`}
+              sub="congestion minutes"
+              accent={tierColor}
+            />
+            {/* CBM tooltip — hover only, no modal */}
+            <div className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block z-10 pointer-events-none">
+              <div className="bg-[#0f172a] border border-[#1f2a44] rounded-lg px-3 py-2 text-[10px] text-slate-300 font-mono whitespace-nowrap shadow-xl">
+                <div className="text-[#22d3ee] font-semibold mb-1 text-[9px] uppercase tracking-wider">Capacity Blockage Minutes</div>
+                <div className="space-y-0.5 text-slate-400">
+                  <div>Duration × Lane Blockage</div>
+                  <div>× Vehicle Footprint</div>
+                  <div>× Junction Sensitivity</div>
+                </div>
+              </div>
+            </div>
+          </div>
           <MetricCard label="Violations" value={zone.violation_count.toLocaleString('en-IN')} sub="recorded events" accent="#f97316" />
           <MetricCard label="Peak Hour %" value={`${(zone.peak_hour_ratio * 100).toFixed(1)}%`} sub="of hourly volume" accent="#3b82f6" />
           <MetricCard label="Recurrence" value={zone.recurrence_days} sub="active days" accent="#a855f7" />
@@ -219,7 +279,50 @@ export default function DrillDownPanel({
           </div>
         </div>
 
-        {/* Pie chart */}
+        {/* Patrol Deployment Plan (Placed between window and violation type mix) */}
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500 font-semibold mb-2 flex items-center gap-1.5">
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" className="text-slate-500">
+              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M5 6 H11 M5 10 H9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+            Patrol Deployment Plan
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] font-mono mt-1">
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Recommended Station</span>
+              <span className="text-slate-800 font-semibold">{zone.police_station} PS</span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Recommended Unit</span>
+              <span className="text-slate-800 font-semibold">1 patrol unit</span>
+            </div>
+            <div className="col-span-2">
+              <span className="text-[9px] text-slate-400 block uppercase">Route Sequence</span>
+              <span className="text-slate-800 font-semibold truncate block" title={`Start at ${zone.police_station} PS → Stop 1: ${junctionName}`}>
+                Start at {zone.police_station} PS → {junctionName}
+              </span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Coverage</span>
+              <span className="text-slate-800 font-semibold">{zone.radius_m.toFixed(0)}m radius</span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Travel Radius</span>
+              <span className="text-slate-800 font-semibold">{zone.radius_m.toFixed(0)} meters</span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Expected Recovery</span>
+              <span className="text-emerald-600 font-semibold">{Math.round(zone.zone_CBM_sum * 0.4).toLocaleString('en-IN')} CBM</span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 block uppercase">Morning Shift Priority</span>
+              <span className="text-slate-800 font-semibold">{win && win.start < 12 ? 'High' : 'Low'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pie chart (Violation Type Mix) */}
         <div>
           <MiniHeader
             icon={
@@ -263,7 +366,7 @@ export default function DrillDownPanel({
           </div>
         </div>
 
-        {/* Bar chart */}
+        {/* Bar chart (Vehicle Type Mix) */}
         <div>
           <MiniHeader
             icon={
@@ -304,33 +407,56 @@ export default function DrillDownPanel({
           </div>
         </div>
 
-        {/* Explainability sentence */}
-        <div className="bg-[#0f172a]/95 rounded-lg p-3 clip-corner-sm">
-          <div className="flex items-start gap-2">
-            <div className="w-5 h-5 rounded-full bg-[#22d3ee]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg viewBox="0 0 12 12" width="10" height="10" fill="none">
-                <path
-                  d="M6 1 V2 M6 10 V11 M1 6 H2 M10 6 H11 M2.5 2.5 L3 3 M9 9 L9.5 9.5 M2.5 9.5 L3 9 M9 3 L9.5 2.5"
-                  stroke="#22d3ee"
-                  strokeWidth="1"
-                  strokeLinecap="round"
-                />
-                <circle cx="6" cy="6" r="2" stroke="#22d3ee" strokeWidth="1" fill="#22d3ee30" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-[0.14em] text-[#22d3ee] font-semibold mb-1">
-                CurbOps · Explainability
-              </div>
-              <p className="text-[11px] text-slate-200 leading-relaxed">{explainZone(zone)}</p>
+        {/* Why Prioritized Panel */}
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500 font-semibold mb-2">
+            Why Prioritized
+          </div>
+          <ul className="space-y-1">
+            {whyPrioritizedBullets.map((b, i) => (
+              <li key={i} className="flex items-center gap-2 text-[11px] text-slate-700 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
+                {b}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Deployment Brief (Concise operational bullets only, no AI paragraph) */}
+        <div className="bg-[#0f172a]/95 rounded-lg p-3 clip-corner-sm border border-slate-800">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-[#22d3ee] font-semibold mb-2">
+            Deployment Brief
+          </div>
+          <ul className="space-y-1.5">
+            {deploymentBriefBullets.map((b, i) => (
+              <li key={i} className="flex items-start gap-2 text-[11px] text-slate-200 font-mono leading-snug">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee]/80 mt-1.5 flex-shrink-0" />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* CBM Explainability Formula */}
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-[#22d3ee] font-semibold mb-2">
+            CBM Explainability
+          </div>
+          <div className="text-[11px] font-mono text-slate-300 leading-normal">
+            <div className="text-[#22d3ee] font-semibold">Capacity Blockage Minutes (CBM)</div>
+            <div className="mt-1.5 pl-2 border-l-2 border-[#22d3ee]/30 space-y-0.5 text-slate-400">
+              <div>Duration</div>
+              <div>× Lane Blockage</div>
+              <div>× Vehicle Footprint</div>
+              <div>× Junction Sensitivity</div>
             </div>
           </div>
         </div>
 
         {simulate && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-[11px] text-emerald-800">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-[11px] text-emerald-800 font-mono">
             <strong className="font-semibold">Sim active:</strong> this zone is receiving simulated TOW + PATROL capacity. Projected CBM after recovery:{' '}
-            <span className="font-mono font-semibold">
+            <span className="font-semibold">
               {Math.round(zone.zone_CBM_sum * 0.4).toLocaleString('en-IN')} min
             </span>{' '}
             (–60%).

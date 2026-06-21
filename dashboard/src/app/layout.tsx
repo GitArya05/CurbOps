@@ -14,9 +14,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CurbOps · BTP Command Centre",
+  title: "CurbOps • BTP Command Centre",
   description: "Bengaluru Traffic Police interactive parking enforcement dashboard. Prioritises Tow, Patrol, and Monitor zones using CBM (Capacity-Blockage Minutes).",
-  keywords: ["CurbOps", "BTP", "Bengaluru Traffic Police", "traffic analytics", "Gridlock 2.0", "command centre"],
+  keywords: ["CurbOps", "BTP", "Bengaluru Traffic Police", "traffic analytics", "LIVE OPERATIONS", "command centre"],
   authors: [{ name: "CurbOps" }],
   icons: {
     icon: "/favicon.svg",
